@@ -64,17 +64,11 @@ The `instances` array in the `main.js` file contains the details of the remote s
 
 1. Clone the repository:
 
-```bash
-git clone [your-repository-link]
-cd [repository-name]
-```
-
 2. Install the required dependencies:
 
 ```bash
 npm install
 ```
-
 
 3. Update the `instances` array in `main.js` with the details of the instances you want to connect to.
 
