@@ -7,7 +7,6 @@
   const PORT = 3000;
   app.use(express.text()); 
 
-  // Mapping of instance names to their details
   const instances = [
     {
       name: 'jay1',
@@ -71,7 +70,6 @@
     const tempFilePath = '/tmp/edited_config.json';
     fs.writeFileSync(tempFilePath, req.body);
 
-    // Use scp to send the edited file to the remote server
     const scpCommand = `scp -P ${instanceDetails.port} -i ${instanceDetails.privateKey} ${tempFilePath} ${instanceDetails.user}@${instanceDetails.host}:${instanceDetails.remotePath}`;
 
     exec(scpCommand, (error, stdout, stderr) => {
