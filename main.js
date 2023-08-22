@@ -5,7 +5,7 @@
 
   const app = express();
   const PORT = 3000;
-  app.use(express.text()); // Middleware to parse plain text request bodies
+  app.use(express.text()); 
 
   // Mapping of instance names to their details
   const instances = [
@@ -26,7 +26,6 @@
       remotePath: '/root/config.json'
       // ... other details
     },
-    // ... add other instances similarly
   ];
 
   app.get('/', (req, res) => {
