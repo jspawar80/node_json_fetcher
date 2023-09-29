@@ -1,101 +1,217 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Config Viewer</title>
-    <!-- Bootstrap CSS -->
+    <title>ENV Viewer And Editor</title>
     <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
-</head>
-<body class="bg-light">
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f4f4;
+        }
 
-<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.0/umd/popper.min.js"></script>
-<script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
-    
-<div class="container mt-5">
-    <div class="row">
-        <div class="col-md-8 offset-md-2">
-            <h2 class="mb-4">Config Viewer</h2>
-            <div class="form-group">
-                <label for="instanceSelector">Select Instance:</label>
-                <select class="form-control" id="instanceSelector">
-                    <!-- Options will be populated dynamically -->
-                </select>
-            </div>
-            <button class="btn btn-primary mb-3" onclick="fetchConfig()">Fetch Config</button>
-            <div class="form-group">
-                <label for="configEditor">Configuration (JSON):</label>
-                <textarea class="form-control" style="font-family: 'Courier New', monospace;" id="configEditor" rows="10"></textarea>
-            </div>
-            <button class="btn btn-success" onclick="saveConfig()">Save Changes</button>            
+        .container {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+
+        th, td {
+            padding: 8px 12px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+
+        button {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container mt-5">
+        <h2 class="mb-4 text-center">ENV Viewer And Editor</h2>
+
+        <div class="form-group">
+            <label for="instanceSelector">Select Instance:</label>
+            <select class="form-control" id="instanceSelector" onchange="populateContainers()">
+                <!-- Options will be populated dynamically -->
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="containerSelector">Select Container:</label>
+            <select class="form-control" id="containerSelector">
+                <!-- Options will be populated dynamically -->
+            </select>
+        </div>
+
+        <button class="btn btn-primary mb-3" onclick="fetchConfig()">Fetch ENV</button>
+
+        <!-- Simple Table Structure -->
+        <table>
+            <thead>
+                <tr>
+                    <th>KEY</th>
+                    <th>VALUE</th>
+                </tr>
+            </thead>
+            <tbody id="envTable">
+                <!-- Rows will be populated dynamically -->
+            </tbody>
+        </table>
+
+        <div class="text-center mb-3">
+            <button class="btn btn-info" onclick="addRow()">Add Key-Value Pair</button>
+        </div>
+
+        <div class="text-center">
+            <button class="btn btn-success" onclick="saveConfig()">Save Changes</button>
         </div>
     </div>
-</div>
-
+    
     <script>
+        function isValidEnv(text) {
+            const lines = text.trim().split('\n');
+            return lines.every(line => {
+                const parts = line.split('=');
+                return parts.length >= 2 && parts[0].trim() && parts.slice(1).join('=').trim();
+            });
+        }
 
-        function isValidJson(text) {
-                try {
-                    JSON.parse(text);
-                    return true;
-                } catch {
-                    return false;
-                }
-            }
+        function populateContainers() {
+            const instanceName = document.getElementById('instanceSelector').value;
+            fetch(`/containers/${instanceName}`)
+                .then(response => response.json())
+                .then(data => {
+                    const containerSelector = document.getElementById('containerSelector');
+                    containerSelector.innerHTML = ''; // Clear previous options
+                    data.forEach(container => {
+                        const option = document.createElement('option');
+                        option.value = container.containerId;
+                        option.textContent = `${container.imageName} (${container.containerId})`; // Display both imageName and containerId
+                        containerSelector.appendChild(option);
+                    });
+                });
+        }
+
         function fetchConfig() {
             const instanceName = document.getElementById('instanceSelector').value;
-            fetch(`/config/${instanceName}`)
+            const containerId = document.getElementById('containerSelector').value;
+            fetch(`/config/${instanceName}/${containerId}`)
                 .then(response => response.text())
                 .then(data => {
-                    document.getElementById('configEditor').value = data;
+                    const envTable = document.getElementById('envTable');
+                    envTable.innerHTML = ''; // Clear previous rows
+
+                    const lines = data.trim().split('\n');
+                    lines.forEach(line => {
+                        const parts = line.split('=');
+                        addRow(parts[0].trim(), parts.slice(1).join('=').trim());
+                    });
                 })
                 .catch(error => {
                     console.error('Error fetching config:', error);
                 });
         }
 
-        function saveConfig() {
-        const instanceName = document.getElementById('instanceSelector').value;
-        const editedContent = document.getElementById('configEditor').value;
+        function addRow(key = '', value = '') {
+            const envTable = document.getElementById('envTable');
+            const row = document.createElement('tr');
 
-        if (!isValidJson(editedContent)) {
-            alert('Please enter valid JSON content.');
-            return;
+            const keyCell = document.createElement('td');
+            const keyInput = document.createElement('input');
+            keyInput.type = 'text';
+            keyInput.value = key;
+            keyInput.className = 'form-control';
+            keyCell.appendChild(keyInput);
+
+            const valueCell = document.createElement('td');
+            const valueInput = document.createElement('input');
+            valueInput.type = 'text';
+            valueInput.value = value;
+            valueInput.className = 'form-control';
+            valueCell.appendChild(valueInput);
+
+            row.appendChild(keyCell);
+            row.appendChild(valueCell);
+            envTable.appendChild(row);
         }
 
-        fetch(`/save-config/${instanceName}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'text/plain'
-            },
-            body: editedContent
-        })
-        .then(response => {
-            if (response.ok) {
-                alert('Config saved successfully!');
-            } else {
-                alert('Error saving config.');
+        function saveConfig() {
+            const envTable = document.getElementById('envTable');
+            const rows = envTable.querySelectorAll('tr');
+            let envContent = '';
+
+            rows.forEach(row => {
+                const key = row.querySelector('td:nth-child(1) input').value;
+                const value = row.querySelector('td:nth-child(2) input').value;
+                envContent += `${key}=${value}\n`;
+            });
+
+            if (!isValidEnv(envContent)) {
+                alert('Please enter valid environment variables in the format KEY=VALUE.');
+                return;
             }
-        })
-        .catch(error => {
-            console.error('Error saving config:', error);
-        });
+
+            const instanceName = document.getElementById('instanceSelector').value;
+            const containerId = document.getElementById('containerSelector').value;
+
+            fetch(`/save-config/${instanceName}/${containerId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'text/plain'
+                },
+                body: envContent
+            })
+                .then(response => {
+                    if (response.ok) {
+                        alert('Config saved successfully!');
+                    } else {
+                        alert('Error saving config.');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error saving config:', error);
+                });
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-        fetch('/get-instances')
-            .then(response => response.json())
-            .then(data => {
-            const instanceSelector = document.getElementById('instanceSelector');
-            data.forEach(instance => {
-                const option = document.createElement('option');
-                option.value = instance.name;
-                option.textContent = instance.name;
-                instanceSelector.appendChild(option);
-            });
-            });
+            fetch('/get-instances')
+                .then(response => response.json())
+                .then(data => {
+                    const instanceSelector = document.getElementById('instanceSelector');
+                    data.forEach(instance => {
+                        const option = document.createElement('option');
+                        option.value = instance.name;
+                        option.textContent = instance.name;
+                        instanceSelector.appendChild(option);
+                    });
+                    populateContainers(); // Populate containers for the initially selected instance
+                });
         });
     </script>
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.0/umd/popper.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
 </body>
+
 </html>
