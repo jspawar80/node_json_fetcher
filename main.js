@@ -1,88 +1,127 @@
-  const express = require('express');
-  const path = require('path');
-  const { exec } = require('child_process');
-  const fs = require('fs');
+const express = require('express');
+const path = require('path');
+const { exec } = require('child_process');
 
-  const app = express();
-  const PORT = 3000;
-  app.use(express.text()); 
+const app = express();
+const PORT = 3000;
+app.use(express.text());
 
-  const instances = [
+const instances = [
     {
-      name: 'jay1',
-      user: 'root',
-      host: '143.110.190.57',
-      port: 911,
-      privateKey: '/home/ishu/balpreet.pem',
-      remotePath: '/root/config.json'
+        name: 'jay1',
+        user: 'root',
+        host: '143.110.000.10',
+        port: 22,
+        privateKey: '/home/ishu/key.pem',
+        paths: ['/usr/src/app/.env']
     },
-    {
-      name: 'jay2',
-      user: 'root',
-      host: '143.110.190.57',
-      port: 911,
-      privateKey: '/home/ishu/balpreet.pem',
-      remotePath: '/root/config.json'
-      // ... other details
-    },
-  ];
+];
 
-  app.get('/', (req, res) => {
+app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
-  });
+});
 
-  app.get('/get-instances', (req, res) => {
+app.get('/get-instances', (req, res) => {
     const instanceNames = instances.map(instance => ({ name: instance.name }));
     res.json(instanceNames);
-  });
+});
 
-  app.get('/config/:instanceName', (req, res) => {
+app.get('/containers/:instanceName', (req, res) => {
     const instanceName = req.params.instanceName;
-    const instanceDetails = instances.find(instance => instance.name === instanceName);
-
-    if (!instanceDetails) {
-      return res.status(404).send('Instance not found');
-    }
-
-    const scpCommand = `scp -P ${instanceDetails.port} -i ${instanceDetails.privateKey} ${instanceDetails.user}@${instanceDetails.host}:${instanceDetails.remotePath} /tmp/config.json`;
-
-    exec(scpCommand, (error, stdout, stderr) => {
-      if (error) {
-        console.error('Error fetching config:', error);
-        return res.status(500).send('Error fetching config');
-      }
-      res.sendFile('/tmp/config.json');
-    });
-  });
-
-
-  app.post('/save-config/:instanceName', (req, res) => {
-    const instanceName = req.params.instanceName;
-    
-    // Find the instance details from the array
     const instanceDetails = instances.find(instance => instance.name === instanceName);
 
     if (!instanceDetails) {
         return res.status(404).send('Instance not found');
     }
 
-    // Save the edited content to a temporary file
-    const tempFilePath = '/tmp/edited_config.json';
-    fs.writeFileSync(tempFilePath, req.body);
+    const sshCommand = `ssh -p ${instanceDetails.port} -i ${instanceDetails.privateKey} ${instanceDetails.user}@${instanceDetails.host} "docker ps --format '{{.ID}} {{.Image}}'"`;
 
-    const scpCommand = `scp -P ${instanceDetails.port} -i ${instanceDetails.privateKey} ${tempFilePath} ${instanceDetails.user}@${instanceDetails.host}:${instanceDetails.remotePath}`;
-
-    exec(scpCommand, (error, stdout, stderr) => {
+    exec(sshCommand, (error, stdout, stderr) => {
         if (error) {
-            console.error('Error saving config:', error);
-            return res.status(500).send('Error saving config');
+            console.error('Error fetching containers:', error);
+            return res.status(500).send('Error fetching containers');
         }
-        res.status(200).send('Config saved successfully');
+
+        const containers = stdout.trim().split('\n').map(line => {
+            const parts = line.split(' ');
+            return {
+                containerId: parts[0],
+                imageName: parts.slice(1).join(' ')
+            };
+        });
+
+        res.json(containers);
     });
-  });
+});
+
+app.get('/config/:instanceName/:containerId', (req, res) => {
+    const { instanceName, containerId } = req.params;
+    const instanceDetails = instances.find(instance => instance.name === instanceName);
+
+    if (!instanceDetails) {
+        return res.status(404).send('Instance not found');
+    }
+
+    let envData = '';
+    let errors = [];
+
+    // Function to execute the sshCommand for each path
+    function fetchEnvForPath(index) {
+        if (index >= instanceDetails.paths.length) {
+            if (errors.length) {
+                console.error('Errors fetching env:', errors);
+                return res.status(500).send('Error fetching env');
+            }
+            return res.send(envData);
+        }
+
+        const sshCommand = `ssh -p ${instanceDetails.port} -i ${instanceDetails.privateKey} ${instanceDetails.user}@${instanceDetails.host} "docker exec ${containerId} cat ${instanceDetails.paths[index]}"`;
+
+        exec(sshCommand, (error, stdout, stderr) => {
+            if (error) {
+                errors.push(error);
+            } else {
+                envData += stdout + '\n';
+            }
+            fetchEnvForPath(index + 1);  // Recursive call with incremented index
+        });
+    }
+
+    fetchEnvForPath(0);  // Start the recursive function with the first path
+});
+
+app.post('/save-config/:instanceName/:containerId', (req, res) => {
+    const { instanceName, containerId } = req.params;
+    const instanceDetails = instances.find(instance => instance.name === instanceName);
+
+    if (!instanceDetails) {
+        return res.status(404).send('Instance not found');
+    }
+
+    const envContent = req.body;
+    const envPath = instanceDetails.paths[0];  // Assuming you're saving to the first path in the array
+    const updateEnvCommand = `ssh -p ${instanceDetails.port} -i ${instanceDetails.privateKey} ${instanceDetails.user}@${instanceDetails.host} "docker exec -i ${containerId} sh -c 'cat > ${envPath}'" <<EOF\n${envContent}\nEOF`;
+
+    exec(updateEnvCommand, (error, stdout, stderr) => {
+        if (error) {
+            console.error('Error updating env:', error);
+            return res.status(500).send('Error updating env');
+        }
+
+        // Restart the container after updating the .env file
+        const restartCommand = `ssh -p ${instanceDetails.port} -i ${instanceDetails.privateKey} ${instanceDetails.user}@${instanceDetails.host} "docker restart ${containerId}"`;
+
+        exec(restartCommand, (restartError, restartStdout, restartStderr) => {
+            if (restartError) {
+                console.error('Error restarting container:', restartError);
+                return res.status(500).send('Error restarting container');
+            }
+            res.status(200).send('Env updated and container restarted successfully');
+        });
+    });
+});
 
 
-
-  app.listen(PORT, () => {
+app.listen(PORT, () => {
     console.log(`Server started on http://localhost:${PORT}`);
-  });
+});
